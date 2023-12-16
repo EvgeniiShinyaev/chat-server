@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Клиент</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
+        }
+
+        div {
+            margin-bottom: 10px;
+        }
+
+/* Поле ввода для отправки сообщений. 
+При нажатии клавиши Enter отправляется введенное сообщение на сервер WebSocket.*/
+        textarea {
+            width: calc(100% - 20px);
+            padding: 10px;
+            box-sizing: border-box;
+            margin-bottom: 10px;
+            border-radius: 15px;
+            border: 1px solid #ccc;
+        }
+
+/*Блок для отображения всех сообщений чата.
+ Сюда будут добавляться новые сообщения от сервера или других пользователей./*
+        .message {
+            padding: 10px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .anonymous-button::before {
+            margin-right: 5px;
+        }
+
+        #createRoomBtn::before {
+            content: '\1F195'; /* Unicode для символа новой комнаты */
+        }
+
+        #enterRoomBtn::before {
+            content: '\1F680'; /* Unicode для ракеты */
+        }
+
+        #leaveRoomBtn::before {
+            content: '\1F6AA'; /* Unicode для сигнального конуса */
+        }
+
+        #listRoomsBtn::before {
+            content: '\1F4CB'; /* Unicode для карточки индекса */
+        }
+
+
+        button {
+            padding: 10px;
+            cursor: pointer;
+            border: none;
+            border-radius: 15px;
+            margin-right: 5px;
+        }
+
+        button:hover {
+            background-color: #ddd;
+        }
+
+        #createRoomBtn {
+            background-color: #3498db;
+            color: white;
+        }
+
+        #enterRoomBtn {
+            background-color: #3498db;
+            color: white;
+        }
+
+        #leaveRoomBtn {
+            background-color: #3498db;
+            color: white;
+        }
+
+        #listRoomsBtn {
+            background-color: #3498db;
+            color: white;
+        }
+
+        input {
+            padding: 10px;
+            box-sizing: border-box;
+            border-radius: 15px;
+            border: 1px solid #ccc;
+            margin-right: 5px;
+        }
+
+/* Поле ввода для ввода названия комнаты.*/
+        #roomInput {
+            width: 200px;
+        }
+
+        .user-message {
+            background-color: #3498db;
+            color: white;
+            border-radius: 15px;
+            padding: 8px;
+            margin-bottom: 5px;
+        }
+
+        .other-message {
+            background-color: #ddd;
+            color: #333; /* Цвет текста для сообщений от других пользователей */
+            border-radius: 15px;
+            padding: 8px;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="message"></div>
+    <textarea placeholder="Чтобы отправить сообщение, нажмите Enter"></textarea>
+    <div>
+        <input type="text" id="roomInput" placeholder="Введите название комнаты">
+        <button id="createRoomBtn" class="anonymous-button">Создать комнату</button>
+        <button id="enterRoomBtn" class="anonymous-button">Войти в комнату</button>
+        <button id="leaveRoomBtn" class="anonymous-button">Выйти из комнаты</button>
+        <button id="listRoomsBtn" class="anonymous-button">Список комнат</button>
+    </div>
+    <script>
+        var socket = null;
+        var currentRoom = null;
+        var userName = prompt("Пожалуйста, введите ваше имя пользователя:", "Аноним") || "Аноним";
+
+/*установка соединения с сервером WebSocket
+ и управление сообщениями, отправляемыми и получаемыми от сервера.*/
+        function connectToWebSocket() {
+            if (socket) {
+                socket.close();
+            }
+            socket = new WebSocket("ws://localhost:8888");
+
+            socket.onopen = function () {
+                socket.send("/setUserName " + userName);
+                document.querySelector("textarea").addEventListener('keyup', function (e) {
+                    if (e.keyCode === 13) {
+                        if (this.value.trim() === "") {
+                            return false;
+                        }
+                        socket.send(userName + ": " + this.value.trim());
+                        this.value = "";
+                    }
+                });
+
+                document.querySelector("#roomInput").addEventListener('keyup', function (e) {
+                    if (e.keyCode === 13) {
+                        var roomName = this.value.trim();
+                        if (roomName === "") {
+                            return false;
+                        }
+                        socket.send('/enter ' + roomName);
+                        this.value = "";
+                        currentRoom = roomName;
+                    }
+                });
+            };
+
+            socket.onerror = function () {
+                console.log('Ошибка подключения к серверу');
+            };
+
+            socket.onmessage = function (e) {
+                var messageDiv = document.querySelector(".message");
+                var p = document.createElement("p");
+                p.innerHTML = e.data;
+
+                if (e.data.startsWith(userName + ":")) {
+                    p.classList.add("user-message");
+                } else {
+                    p.classList.add("other-message");
+                }
+
+                messageDiv.appendChild(p);
+            };
+        }
+
+        document.querySelector("#createRoomBtn").addEventListener("click", function () {
+            var roomName = document.querySelector("#roomInput").value;
+            if (roomName.trim() === "") {
+                return;
+            }
+            socket.send("/create " + roomName);
+        });
+
+        document.querySelector("#enterRoomBtn").addEventListener("click", function () {
+            var roomName = document.querySelector("#roomInput").value;
+            if (roomName.trim() === "") {
+                return;
+            }
+            socket.send("/enter " + roomName);
+            currentRoom = roomName;
+
+            // Очистить существующие сообщения чата
+            var messageDiv = document.querySelector(".message");
+            messageDiv.innerHTML = "";
+        });
+
+        document.querySelector("#leaveRoomBtn").addEventListener("click", function () {
+            var roomName = document.querySelector("#roomInput").value;
+            if (roomName.trim() === "") {
+                return;
+            }
+            socket.send("/leave " + roomName);
+            currentRoom = null;
+        });
+
+        document.querySelector("#listRoomsBtn").addEventListener("click", function () {
+            // Запросить список комнат и пользователей в них у сервера
+            socket.send('/listRooms');
+        });
+
+        connectToWebSocket();
+    </script>
+</body>
+</html>
